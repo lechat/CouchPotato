@@ -3,14 +3,13 @@ from app.config.db import Session as Db, QualityTemplate, Movie
 from app.controllers.movie import MovieController
 from app.lib.cron.base import cronBase
 from app.lib.library import Library
-from app.lib.imdb import ImdbWl
+from app.lib.imdbwl import ImdbWl
 import time
 import traceback
 
 log = CPLog(__name__)
 
 class ImdbWlCron(cronBase, Library):
-
     ''' Cronjob for getting imdb watchlist '''
 
     lastChecked = 0
@@ -41,7 +40,7 @@ class ImdbWlCron(cronBase, Library):
             time.sleep(wait)
 
     def isDisabled(self):
-        return not self.conf('watchlist_enabled')
+        return not self.conf('enabled')
 
     def doCsvCheck(self):
         '''
@@ -67,39 +66,27 @@ class ImdbWlCron(cronBase, Library):
                 return
 
             time.sleep(5) # give the system some slack
-            if (self.conf('dontaddcollection')):
-                if ("in_collection" in movie):
-                    if (movie.get("in_collection")):
-                        log.debug('Movie "%s" already in collection, ignoring' % movie.get('title'))
-                        continue
 
-            log.debug('Searching for movie: "%s".' % movie.get('title'))
+            log.debug('Searching for movie: "%s".' % movie['title'])
             result = False
             try:
-                if movie.get('tmdb_id') != "":
-                    result = self.searcher['movie'].findById(movie.get('tmdb_id'))
-                elif movie.get('imdb_id') != "":
-                    result = self.searcher['movie'].findByImdbId(movie.get('imdb_id'))
-                else:
-                    log.info('Trakt has no tmdb or imdb Id for movie: "%s".' % movie.get('title'))
-                    continue
+                result = self.searcher['movie'].findByImdbId(movie['imdb'])
             except Exception:
                 result = False
             if not result:
-                log.info('Movie not found: "%s".' % movie.get('title'))
+                log.info('Movie not found: "%s".' % movie['title'])
                 continue
-            log.debug('Checking movie: %s.' % movie.get('title') + ' (' + str(movie.get('year')) + ')')
             try:
                 # Check and see if the movie is in CP already, if so, ignore it.
-                cpMovie = Db.query(Movie).filter_by(imdb = movie.get('imdb_id')).first()
+                cpMovie = Db.query(Movie).filter_by(imdb = movie['imdb']).first()
                 if cpMovie:
-                    log.debug('Movie found in CP Database, ignore: "%s".' % movie.get('title'))
+                    log.info('IMDB Watchlist: Movie found in CP Database, ignore: "%s".' % movie['title'])
                     continue
-                log.info('Adding movie to queue: %s.' % movie.get('title') + ' (' + str(movie.get('year')) + ')')
+                log.info('Adding movie to queue: %s.' % movie['title'])
                 quality = Db.query(QualityTemplate).filter_by(name = self.config.get('Quality', 'default')).one()
                 MyMovieController._addMovie(result, quality.id)
             except:
-                log.info('MovieController unable to add this movie: "%s". %s' % (movie.get('title'), traceback.format_exc()))
+                log.info('MovieController unable to add this movie: "%s". %s' % (movie['title'], traceback.format_exc()))
 
 def startImdbWlCron(config, searcher, debug):
     cron = ImdbWlCron()
